@@ -17,10 +17,17 @@ class ExtraEntryPoints : Plugin {
     }
 
     override fun onStart() {
+        val mappingAnnos = listOf(
+            "org.springframework.web.bind.annotation.RequestMapping",
+            "org.springframework.web.bind.annotation.GetMapping",
+            "org.springframework.web.bind.annotation.PostMapping",
+            "org.springframework.web.bind.annotation.PutMapping",
+            "org.springframework.web.bind.annotation.DeleteMapping",
+            "org.springframework.web.bind.annotation.PatchMapping"
+        )
         for (cls in World.get().classHierarchy.allClasses()) {
             for (method in cls.declaredMethods) {
-                if (method.hasAnnotation("org.springframework.web.bind.annotation.RequestMapping") ||
-                    method.hasAnnotation("org.springframework.web.bind.annotation.GetMapping")) {
+                if (mappingAnnos.any { method.hasAnnotation(it) }) {
                     theSolver.addEntryPoint(EntryPoint(
                         method,
                         DeclaredParamProvider(method, theSolver.heapModel, 2)
