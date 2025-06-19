@@ -394,7 +394,9 @@ public class ClassHierarchyImpl implements ClassHierarchy {
 
     @Override
     public boolean isSubclass(JClass superclass, JClass subclass) {
-        if (superclass.equals(subclass)) {
+        if (superclass == null || subclass == null) {
+            return false;
+        } else if (Objects.equals(superclass, subclass)) {
             return true;
         } else if (superclass == getObjectClass()) {
             return true;

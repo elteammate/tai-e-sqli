@@ -1,0 +1,6 @@
+sinks:
+  - { method: "<java.sql.Statement^: java.sql.ResultSet executeQuery(*)>", index: "0" }
+  - { method: "<java.sql.Statement^: int executeUpdate(*)>", index: "0" }
+  - { method: "<java.sql.PreparedStatement^: java.sql.ResultSet executeQuery()>", index: "base" }
+  - { method: "<java.sql.PreparedStatement^: int executeUpdate()>", index: "base" }
+  - { method: "<org.joychou.controller.SQLI: void sink(java.lang.String)>", index: "0" }

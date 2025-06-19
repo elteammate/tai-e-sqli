@@ -39,7 +39,7 @@ public record TaintConfig(List<Source> sources,
      * An empty taint config.
      */
     public static final TaintConfig EMPTY = new TaintConfig(
-            List.of(), List.of(), List.of(), List.of(), false);
+            List.of(), List.of(), List.of(), List.of(), true);
 
     /**
      * Merges this taint config with other taint config.

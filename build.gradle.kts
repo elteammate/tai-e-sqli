@@ -2,6 +2,7 @@ plugins {
     application
     id("tai-e.conventions")
     id("maven-publish.conventions")
+    kotlin("jvm") version "2.1.10"
 }
 
 group = projectGroupId

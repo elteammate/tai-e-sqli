@@ -1,0 +1,2 @@
+sanitizers:
+  - { kind: param, method: "<org.joychou.security.SecurityUtil: java.lang.String sqlFilter(java.lang.String)>", index: 0 }
