@@ -8,7 +8,11 @@ import pascal.taie.language.classes.ClassHierarchy
 import pascal.taie.language.type.TypeSystem
 import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Element
+import org.w3c.dom.Document
+import org.w3c.dom.Node
 import java.io.File
+import java.util.jar.JarFile
+import java.io.InputStream
 
 class MyTaintConfigProvider(val hierarchy: ClassHierarchy, val typeSystem: TypeSystem) :
     TaintConfigProvider(hierarchy, typeSystem) {
@@ -84,15 +88,66 @@ class MyTaintConfigProvider(val hierarchy: ClassHierarchy, val typeSystem: TypeS
     )
 
     private fun findInjections(sql: String): List<String?> {
-        val pattern = Regex("\\$\\{\\s*([\\w_]+)\\s*}")
-        return pattern.findAll(sql).map {
-            val name = it.groupValues[1]
-            if (name == "_parameter") {
-                null
-            } else {
-                name
+        // This regex finds content inside ${...}, which indicates an unsafe string substitution in MyBatis.
+        val pattern = Regex("\\$\\{([^}]+)}")
+        val results = mutableListOf<String?>()
+        pattern.findAll(sql).forEach { matchResult ->
+            val expression = matchResult.groupValues[1].trim()
+            // This regex finds the initial identifier in the OGNL expression.
+            // This identifier is the parameter name we are looking for.
+            // e.g., in "user.name", it will match "user".
+            val identifierRegex = Regex("^[a-zA-Z_][a-zA-Z0-9_]*")
+            val match = identifierRegex.find(expression)
+            val name = match?.value
+
+            if (name != null) {
+                if (name == "_parameter") {
+                    // _parameter is a special mybatis variable for single unnamed parameters.
+                    // We represent it as null.
+                    results.add(null)
+                } else {
+                    results.add(name)
+                }
             }
-        }.toList()
+            // If name is null, it's an expression that doesn't start with a parameter
+            // (e.g., static field/method access like `${@...}` or literals like `${'foo'}`).
+            // We cannot link these to a method parameter, so we ignore them.
+        }
+        return results.distinct()
+    }
+
+    private fun processMapperXml(doc: Document, queries: MutableList<UnsafeMappedQuery>) {
+        val mapperEl = doc.documentElement
+        if (mapperEl.tagName != "mapper") return
+
+        val namespace = mapperEl.getAttribute("namespace")
+
+        fun traverse(node: Node, currentId: String?) {
+            if (node is Element) {
+                var stmtId = currentId
+                if (node.tagName in listOf("select", "insert", "update", "delete")) {
+                    stmtId = node.getAttribute("id")
+                }
+                stmtId?.let { id ->
+                    val sql = node.textContent
+                    for (unsafeParamName in findInjections(sql)) {
+                        queries.add(
+                            UnsafeMappedQuery(
+                                className = namespace,
+                                methodName = id,
+                                unsafeParamName = unsafeParamName
+                            )
+                        )
+                    }
+                }
+                val children = node.childNodes
+                for (i in 0 until children.length) {
+                    traverse(children.item(i), stmtId)
+                }
+            }
+        }
+
+        traverse(mapperEl, null)
     }
 
     private fun findUnsafeQueries(world: World): List<UnsafeMappedQuery> {
@@ -105,37 +160,30 @@ class MyTaintConfigProvider(val hierarchy: ClassHierarchy, val typeSystem: TypeS
                         val doc = DocumentBuilderFactory.newInstance()
                             .newDocumentBuilder()
                             .parse(xmlFile)
-                        val mapperEl = doc.documentElement
-                        val namespace = mapperEl.getAttribute("namespace")
-                        fun traverse(node: org.w3c.dom.Node, currentId: String?) {
-                            if (node is Element) {
-                                var stmtId = currentId
-                                if (node.tagName in listOf("select", "insert", "update", "delete")) {
-                                    stmtId = node.getAttribute("id")
-                                }
-                                stmtId?.let { id ->
-                                    val sql = node.textContent
-                                    for (unsafeParamName in findInjections(sql)) {
-                                        queries.add(
-                                            UnsafeMappedQuery(
-                                                className = namespace,
-                                                methodName = id,
-                                                unsafeParamName = unsafeParamName
-                                            )
-                                        )
-                                    }
-                                }
-                                val children = node.childNodes
-                                for (i in 0 until children.length) {
-                                    traverse(children.item(i), stmtId)
-                                }
-                            }
-                        }
-                        traverse(mapperEl, null)
+                        processMapperXml(doc, queries)
                     }
                 }
             } else if (f.isFile && f.extension == "jar") {
-                // optionally handle jar entries...
+                runCatching {
+                    val jarFile = JarFile(f)
+                    jarFile.use { jar ->
+                        val entries = jar.entries()
+                        while (entries.hasMoreElements()) {
+                            val entry = entries.nextElement()
+                            if (!entry.isDirectory && entry.name.endsWith(".xml")) {
+                                val inputStream = jar.getInputStream(entry)
+                                inputStream.use { stream ->
+                                    runCatching {
+                                        val doc = DocumentBuilderFactory.newInstance()
+                                            .newDocumentBuilder()
+                                            .parse(stream)
+                                        processMapperXml(doc, queries)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         return queries
