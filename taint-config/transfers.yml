@@ -1,0 +1,2 @@
+transfers:
+  - { method: "<java.sql.Connection^: java.sql.PreparedStatement prepareStatement(*)>", from: "0", to: "result", type: "java.sql.PreparedStatement" }
